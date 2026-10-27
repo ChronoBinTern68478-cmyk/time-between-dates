@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Калкулатор за изминало / оставащо време</title>
+<style>
+    body { font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+           margin: 20px; max-width: 760px; color: #222; }
+    h1   { font-size: 1.35em; margin: 0 0 1em; }
+    fieldset { border: 1px solid #ccc; border-radius: 6px;
+               padding: 10px 14px; margin-bottom: 12px; }
+    legend { font-weight: 600; padding: 0 4px; }
+    select { margin: 0 2px; padding: 2px 4px; font-size: 1em; }
+    button { padding: 4px 10px; font-size: 0.95em; cursor: pointer; }
+    #calcBtn { padding: 8px 18px; font-size: 1em; }
+    #result { margin-top: 15px; padding: 16px;
+              background: #f6f8fa; border-radius: 6px;
+              font-size: 1.05em; line-height: 1.7; }
+    .muted { color: #666; font-size: 0.9em; }
+    .row   { margin: 4px 0; }
+    .value { font-weight: 600; color: #0b5394; }
+</style>
+</head>
+<body>
+
+<h1>Калкулатор за изминало / оставащо време</h1>
+
+<form id="calcForm" onsubmit="return false;">
+
+    <fieldset>
+        <legend>Режим</legend>
+        <label><input type="radio" name="mode" value="now" checked> От дата до сега</label>
+        &nbsp;
+        <label><input type="radio" name="mode" value="two"> Между две дати</label>
+    </fieldset>
+
+    <fieldset>
+        <legend>Събитие A</legend>
+        <div id="eventA"></div>
+    </fieldset>
+
+    <fieldset id="eventBfieldset">
+        <legend>Събитие B</legend>
+        <div id="eventB"></div>
+    </fieldset>
+
+    <button type="button" id="calcBtn">Изчисли</button>
+
+</form>
+
+<div id="result">—</div>
+
+<script src="DateSelect.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    // ---------- календарни операции ----------
+
+    function addYears(date, n) {
+        var y = date.getFullYear() + n;
+        var m = date.getMonth();
+        var d = Math.min(date.getDate(), DateSelect.daysInMonth(y, m));
+        return new Date(y, m, d, date.getHours(), date.getMinutes(), date.getSeconds());
+    }
+
+    function addMonths(date, n) {
+        var total = date.getFullYear() * 12 + date.getMonth() + n;
+        var y = Math.floor(total / 12);
+        var m = ((total % 12) + 12) % 12;
+        var d = Math.min(date.getDate(), DateSelect.daysInMonth(y, m));
+        return new Date(y, m, d, date.getHours(), date.getMinutes(), date.getSeconds());
+    }
+
+    // Календарна разлика, устойчива на DST и различни дължини на месеците.
+    // sign = +1 ако b >= a, иначе -1.
+    function dateDiff(a, b) {
+        var sign = (b.getTime() >= a.getTime()) ? 1 : -1;
+        var from = sign > 0 ? a : b;
+        var to   = sign > 0 ? b : a;
+
+        var years = to.getFullYear() - from.getFullYear();
+        var cand  = addYears(from, years);
+        if (cand > to) { years--; cand = addYears(from, years); }
+
+        var months = 0;
+        while (true) {
+            var next = addMonths(cand, months + 1);
+            if (next > to) break;
+            months++;
+        }
+        cand = addMonths(cand, months);
+
+        // Дни – чрез полунощ, за да не ни бърка лятното часово време
+        var cMid = new Date(cand.getFullYear(), cand.getMonth(), cand.getDate());
+        var tMid = new Date(to.getFullYear(),   to.getMonth(),   to.getDate());
+        var days = Math.round((tMid - cMid) / 86400000);
+
+        // Часове / минути / секунди с "вземане назаем"
+        var h  = to.getHours()   - cand.getHours();
+        var mi = to.getMinutes() - cand.getMinutes();
+        var s  = to.getSeconds() - cand.getSeconds();
+        if (s  < 0) { s  += 60; mi--; }
+        if (mi < 0) { mi += 60; h--; }
+        if (h  < 0) { h  += 24; days--; }
+
+        return { years: years, months: months, days: days,
+                 hours: h, minutes: mi, seconds: s, sign: sign };
+    }
+
+    function totalDays(a, b) {
+        return Math.round(Math.abs(b.getTime() - a.getTime()) / 86400000);
+    }
+
+    // ---------- форматиране ----------
+
+    function PAD(n) { return n < 10 ? '0' + n : '' + n; }
+
+    // Българска плурализация: 1 -> one; 2-4 (без 12-14) -> few; друго -> many
+    function plural(n, one, few, many) {
+        var last2 = n % 100, last1 = n % 10;
+        if (last1 === 1 && last2 !== 11) return one;
+        if (last1 >= 2 && last1 <= 4 && (last2 < 10 || last2 >= 20)) return few;
+        return many;
+    }
+    function pYears(n)   { return n + ' ' + plural(n, 'година', 'години', 'години'); }
+    function pMonths(n)  { return n + ' ' + plural(n, 'месец', 'месеца', 'месеца'); }
+    function pDays(n)    { return n + ' ' + plural(n, 'ден', 'дни', 'дни'); }
+    function pHours(n)   { return n + ' ' + plural(n, 'час', 'часа', 'часа'); }
+    function pMinutes(n) { return n + ' ' + plural(n, 'минута', 'минути', 'минути'); }
+    function pSeconds(n) { return n + ' ' + plural(n, 'секунда', 'секунди', 'секунди'); }
+
+    function formatDate(d) {
+        return DateSelect.DAYS_BG[d.getDay()] + ', ' +
+               d.getDate() + ' ' + DateSelect.MONTHS_BG[d.getMonth()] + ' ' +
+               d.getFullYear() + ' г., ' +
+               PAD(d.getHours()) + ':' + PAD(d.getMinutes()) + ':' + PAD(d.getSeconds());
+    }
+
+    function formatParts(d) {
+        return [pYears(d.years), pMonths(d.months), pDays(d.days),
+                pHours(d.hours), pMinutes(d.minutes), pSeconds(d.seconds)].join(', ');
+    }
+
+    // ---------- UI ----------
+
+    var resultEl  = document.getElementById('result');
+    var eventBset = document.getElementById('eventBfieldset');
+    var calcBtn   = document.getElementById('calcBtn');
+
+    function currentMode() {
+        return document.querySelector('input[name="mode"]:checked').value;
+    }
+
+    function calculate() {
+        var a = DateSelect.readDatePicker('A');
+        var b = (currentMode() === 'two') ? DateSelect.readDatePicker('B') : new Date();
+
+        if (isNaN(a.getTime()) || isNaN(b.getTime())) {
+            resultEl.textContent = 'Невалидна дата.';
+            return;
+        }
+
+        var diff  = dateDiff(a, b);
+        var parts = formatParts(diff);
+        var total = totalDays(a, b).toLocaleString('bg-BG');
+
+        var html = '';
+        if (currentMode() === 'now') {
+            var past = a.getTime() <= b.getTime();
+            html += '<div class="row">A: <b>' + formatDate(a) + '</b></div>';
+            html += '<div class="row">' +
+                    (past ? 'До сега са изминали' : 'До A остават') + ':</div>';
+            html += '<div class="row"><span class="value">' + parts + '</span></div>';
+            html += '<div class="row muted">Общо дни: ' + total + '</div>';
+        } else {
+            html += '<div class="row">A: <b>' + formatDate(a) + '</b></div>';
+            html += '<div class="row">B: <b>' + formatDate(b) + '</b></div>';
+            html += '<div class="row">Разлика:</div>';
+            html += '<div class="row"><span class="value">' + parts + '</span></div>';
+            html += '<div class="row muted">Общо дни: ' + total + '</div>';
+        }
+        resultEl.innerHTML = html;
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        // Начални стойности – смени ги, ако искаш
+        DateSelect.makeDatePicker('eventA', 'A',
+            new Date(1986, 2, 23, 11, 45, 0),      // 23 Март 1986 11:45:00
+            { showTime: true, nowButton: true });
+
+        DateSelect.makeDatePicker('eventB', 'B',
+            new Date(),
+            { showTime: true, nowButton: true });
+
+        Array.prototype.forEach.call(
+            document.querySelectorAll('input[name="mode"]'),
+            function (r) {
+                r.addEventListener('change', function () {
+                    eventBset.style.display = (currentMode() === 'two') ? '' : 'none';
+                    calculate();
+                });
+            }
+        );
+
+        calcBtn.addEventListener('click', calculate);
+
+        // Автоматично обновяване само в режим "до сега"
+        setInterval(function () {
+            if (currentMode() === 'now') calculate();
+        }, 1000);
+
+        eventBset.style.display = 'none';
+        calculate();
+    });
+})();
+</script>
+</body>
+</html>
