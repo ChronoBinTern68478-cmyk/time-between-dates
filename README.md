@@ -17,7 +17,7 @@
 
 ## Демо
 
-👉 https://ChronoBinTern68478-cmyk.github.io/time-between-dates/
+👉 https://chronobintern68478-cmyk.github.io/time-between-dates/
 
 ## Употреба
 
