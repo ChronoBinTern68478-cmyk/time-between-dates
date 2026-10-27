@@ -1,5 +1,7 @@
 # time-between-dates
 
+![Screenshot](screenshot.png)
+
 # Калкулатор за изминало / оставащо време
 
 Малък, самостоятелен HTML/JavaScript инструмент за изчисляване на
